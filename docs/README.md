@@ -24,7 +24,7 @@ This is the single place to get up to speed on `lm-sdc-detectors`: what the proj
 ## 1. Current status in brief
 
 - **No real results exist yet.** Everything has been tested only on fake images, made-up records, and randomly initialized ResNet-18 weights, on a Mac. Nothing has run on a Raspberry Pi.
-- **The main blocker is three files from Reem:** the trained checkpoint, `test_indices.json`, and the EuroSAT zip used for training. See [section 9](#9-known-issues-and-things-to-watch).
+- **The main blocker is the trained checkpoint from Reem,** plus the optional `test_indices.json`. The EuroSAT images are now in the repo at `data/EuroSAT_RGB/`. See [section 9](#9-known-issues-and-things-to-watch).
 - **Built and tested:** bit flips, run labeling, observation stats, activation monitoring, checkpoint and config loading, the frozen run-record schema, Parquet shard I/O, image splits, clean runs, reference ranges, weight and activation fault injection, and the resumable campaign loop.
 - **The real campaign has not been run.** It needs Reem's files, real splits and clean runs, and the pilot's choice of `injections_per_image`.
 - **Not built yet:** the pilot, all detectors, evaluation metrics, and overhead measurement.
@@ -177,12 +177,12 @@ Tests are in `tests/`, in a file named after the module.
 
 ## 6. Data formats
 
-Everything under `data/`, `checkpoints/`, `models/`, `runs/`, and `results/` is gitignored. These locations come from `configs/default.yaml`.
+The EuroSAT images at `data/EuroSAT_RGB/` are committed to the repo (27,000 JPGs, about 88 MB), so every clone has the same file list. Everything else under `data/`, plus `checkpoints/`, `models/`, `runs/`, and `results/`, is gitignored. These locations come from `configs/default.yaml`.
 
 ### Input files
 | Path | Contents |
 |---|---|
-| `data/EuroSAT_RGB/` | Unzipped EuroSAT, one folder per class. The folder names must match `CLASS_NAMES` |
+| `data/EuroSAT_RGB/` | **In the repo.** EuroSAT RGB, one folder per class (27,000 64x64 JPGs). The folder names must match `CLASS_NAMES`. The seed-42 split from it has 2,700 test images, the first being `Residential/Residential_744.jpg` |
 | `checkpoints/resnet18_eurosat.pt` | A plain state_dict, saved with `torch.save(model.state_dict(), path)` |
 | `checkpoints/test_indices.json` | Optional. Assumed to be a JSON list of full-dataset indices. If absent, the seed-42 split is reproduced |
 
@@ -294,7 +294,7 @@ These need to be reflected in the paper, or changed if the team disagrees.
 
 **Blocking:**
 - **The trained weights may no longer exist.** The notebook's only `torch.save` writes a temporary `temp.pt` and deletes it. Reem may need to retrain by re-running the notebook. The split stays the same because it's seeded, but **the TFLite files must then be regenerated from the new weights**, or injection and overhead would use different models.
-- **Get the same EuroSAT zip Reem used.** The split depends on the dataset's file list.
+- **Confirm the committed EuroSAT copy matches Reem's.** The split depends on the dataset's file list. Ask Reem to print `len(full_dataset)` and `test_ds.indices[:5]` in Colab: they should be `27000` and `[21217, 5048, 4732, 2986, 18467]`. If `test_indices.json` arrives, `verify_splits` also checks every image.
 
 **Not yet verified:**
 - **PyTorchFI on the Pi.** Version 0.6.0 works on torch 2.15 on a Mac, for activation injection through our custom hook. Its own weight injection was never tried, because we don't use it.

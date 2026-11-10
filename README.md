@@ -16,8 +16,7 @@ pytest                                                  # no real data needed
 
 The optional extras add TFLite and llama.cpp (`pip install -e ".[tflite,lm]"`). They aren't needed yet and haven't been tested here.
 
-Data, checkpoints, models, and run outputs are gitignored. Put them at the paths in `configs/default.yaml`:
-- `data/EuroSAT_RGB/`: unzipped EuroSAT RGB, the same zip Reem trained on (**still needed**)
+The EuroSAT images are in the repo at `data/EuroSAT_RGB/` (27,000 JPGs, about 88 MB), so everyone uses the same file list. Checkpoints, models, and run outputs are gitignored; put them at the paths in `configs/default.yaml`:
 - `checkpoints/resnet18_eurosat.pt`: trained weights as a plain state_dict (**still needed from Reem**)
 - `checkpoints/test_indices.json`: optional list of test-split indices (**still needed from Reem**); without it, the seed-42 split is reproduced
 - `models/*.tflite`, `models/*.gguf`

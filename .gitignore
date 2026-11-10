@@ -7,7 +7,9 @@ __pycache__/
 .DS_Store
 
 # Large / generated artifacts: share via Drive, not git.
-/data/
+# The EuroSAT images are the exception, so everyone uses the same file list.
+/data/*
+!/data/EuroSAT_RGB/
 /checkpoints/
 /models/
 /runs/
