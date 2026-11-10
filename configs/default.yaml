@@ -30,7 +30,7 @@ model:
 injection:
   sites: [weight, activation]
   bit_groups: [sign, exponent, mantissa]
-  injections_per_image: null             # TODO: set after pilot
+  injections_per_image: 10               # pilot (500 fit runs): 1.4% SDC, 0.6% crash, ~25 ms/run on Mac
   shard_size: 500                        # runs per Parquet shard (resume granularity)
   timeout_s: 10
 
