@@ -27,8 +27,9 @@ This is the single place to get up to speed on `lm-sdc-detectors`: what the proj
 - **The main blocker is the trained checkpoint from Reem,** plus the optional `test_indices.json`. The EuroSAT images are now in the repo at `data/EuroSAT_RGB/`. See [section 9](#9-known-issues-and-things-to-watch).
 - **Built and tested:** bit flips, run labeling, observation stats, activation monitoring, checkpoint and config loading, the frozen run-record schema, Parquet shard I/O, image splits, clean runs, reference ranges, weight and activation fault injection, and the resumable campaign loop.
 - **The real campaign has not been run.** It needs Reem's files, real splits and clean runs, and the pilot's choice of `injections_per_image`.
-- **Not built yet:** the pilot, all detectors, evaluation metrics, and overhead measurement.
-- **Tests:** 461 passing.
+- **Not built yet:** the pilot, the classical detectors, evaluation metrics, and overhead measurement.
+- **Language-model detectors (2026-11-12, branch `micah/lm-detectors`):** single-pass, generative, and probe are built and piloted on fit runs on a laptop. Details, outputs, and first results: [`docs/lm-detectors.md`](lm-detectors.md).
+- **Tests:** 497 passing (7 of them need the Qwen model file and are skipped without it).
 
 ---
 
@@ -87,7 +88,7 @@ This is the single place to get up to speed on `lm-sdc-detectors`: what the proj
 | Item | Status | What is left |
 |---|---|---|
 | Set up the shared GitHub repo | Done | Nothing |
-| Freeze the run-record format | Frozen at version 1 | Reem and Micah still need to review it |
+| Freeze the run-record format | Frozen at version 1 | Micah reviewed it: no changes needed for the LM detectors. Reem still needs to review it |
 | Split images into fitting and evaluation sets | Code done | Run on real data |
 | Run clean inference, keep correct images | Code done | Run on real data |
 | Compute normal ranges from the fitting set | Code done | Run on real data |
@@ -95,7 +96,7 @@ This is the single place to get up to speed on `lm-sdc-detectors`: what the proj
 
 ### Later items
 
-None of these have started: Qwen3 on the Pi, literature, pilot, full campaign, classical and language-model detectors, optional hosted-API reference detector, threshold freezing, evaluation scoring, breakdowns, ablations, Pi overhead measurement, figures, poster, and final paper.
+The language-model detectors are built and piloted on a laptop ([`docs/lm-detectors.md`](lm-detectors.md)). None of these have started: Qwen3 on the Pi, literature, pilot, full campaign, classical detectors, optional hosted-API reference detector, threshold freezing, evaluation scoring, breakdowns, ablations, Pi overhead measurement, figures, poster, and final paper.
 
 Stub files with docstrings already exist for most of the code.
 
@@ -121,7 +122,7 @@ Reem's files: checkpoint, test_indices.json, EuroSAT
 05_inject             [done]  -> runs/faults/fit, eval: Parquet shards, campaign.json
         |
 06_score_classical    [stub]  -> runs/scores/
-07_score_lm           [stub]  -> runs/scores/
+07_score_lm           [done]  -> runs/scores/   LM detectors; see docs/lm-detectors.md
         |
 08_evaluate           [stub]  -> results/
         |
@@ -162,16 +163,19 @@ Tests are in `tests/`, in a file named after the module.
 | `scripts/02_clean_runs.py` | Writes the clean Parquet files | In `test_clean_runs.py` |
 | `scripts/03_reference_ranges.py` | Writes `runs/reference_ranges.json` | In `test_reference_ranges.py` |
 | `scripts/05_inject.py` | Runs the campaign and prints label counts. Options: `--split fit\|eval\|all`, `--max-shards N` | In `test_campaign.py` |
+| `src/sdc/observations/serialize.py` | `observation_columns` (the columns a detector may see), `fmt`, `serialize_observation`, `output_ranges`, `serialize_reference` | 13 (with `prompts.py`) |
+| `src/sdc/detectors/lm/` | `QwenClient`, prompts, `SinglePassDetector`, `GenerativeDetector`, `ProbeDetector`. See [`docs/lm-detectors.md`](lm-detectors.md) | 6 + 17 |
+| `scripts/07_score_lm.py` | Scores a subset of runs with the LM detectors; resumable, with a manifest | Smoke-tested by hand |
 | `tests/test_imports.py` | Smoke test: every module imports | 1 |
 
 **Ported from Reem's notebook.** The transforms, the seed-42 split, and the model definition are in use and tested. `convert_fp32` and `convert_int8` in `src/sdc/model/tflite.py` were ported but **have never been run** in this repo. The original notebook is at `notebooks/reem_TFLite_EuroSAT_ResNet18.ipynb`, from [reemshehayib/TFLite-Deployment-of-ResNet18-on-EuroSAT-Dataset](https://github.com/reemshehayib/TFLite-Deployment-of-ResNet18-on-EuroSAT-Dataset).
 
 **Still stubs:**
-- `src/sdc/observations/serialize.py`, plus `feature_vector` in `stats.py`
-- `src/sdc/detectors/` (all of it, including `freeze_threshold` in `base.py`)
+- `feature_vector` in `stats.py` (it can use `observation_columns` from `serialize.py`)
+- `src/sdc/detectors/classical/`, `freeze_threshold` in `base.py`, and `lm/api_reference.py`
 - `src/sdc/eval/` and `src/sdc/overhead/`
 - `load_interpreter`, `run_tflite`, and `check_layer_alignment` in `src/sdc/model/tflite.py`
-- `scripts/00`, `04`, `06`, `07`, `08`, and `09`
+- `scripts/00`, `04`, `06`, `08`, and `09`
 
 ---
 
@@ -317,7 +321,7 @@ These need to be reflected in the paper, or changed if the team disagrees.
 - **Reem's repo has no license file.** Get an OK from Reem for reusing the code.
 - **Package versions aren't pinned** in `pyproject.toml`. Pin them before the main campaign so all runs use the same software.
 - **Scripts `00`, `04`, and `06`–`09` still use a relative `--config` default.** Scripts `01`–`03` and `05` use `None`, and the rest should match when they're implemented.
-- **The config setting was renamed:** `lm.gguf_path` is now `paths.qwen_gguf`. Micah should know.
+- **The config setting was renamed:** `lm.gguf_path` is now `paths.qwen_gguf`. The LM code takes the model path as an argument, and `scripts/07_score_lm.py` takes `--gguf`; see [`docs/lm-detectors.md`](lm-detectors.md).
 
 ---
 
@@ -347,7 +351,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-The `tflite` and `lm` extras in `pyproject.toml` add LiteRT and llama.cpp. They aren't needed for current work and haven't been installed or tested here.
+The `tflite` and `lm` extras in `pyproject.toml` add LiteRT and llama.cpp. The `tflite` extra hasn't been installed or tested here. The `lm` extra was installed and tested on Linux; setup, the model file, and versions are in [`docs/lm-detectors.md`](lm-detectors.md).
 
 **Run the tests** (no real data needed; takes about 15 seconds on a Mac):
 
@@ -394,7 +398,7 @@ Each script takes `--config some_overlay.yaml` to override settings in `configs/
 4. Get team sign-off on [section 10](#10-open-questions-for-the-team), then run the full campaign.
 
 **In parallel:**
-- Micah: Qwen3 in llama.cpp on the Pi, confirming that yes/no probabilities and hidden states can be read.
+- Micah: LM detectors are built and piloted on a laptop ([`docs/lm-detectors.md`](lm-detectors.md)). Next: Qwen3 on the Pi, and deciding how many runs to score and where.
 - Reem and Arvin: Pi setup and the power-measurement procedure (`pi/README.md` has a checklist).
 
 ---
