@@ -159,7 +159,7 @@ scores = probe.score(eval_runs)   # eval runs must also be in the loaded file
 | The answer words are `yes` and `no`, lowercase, no leading space (token ids 9693 and 2152) | Measured: that's what Qwen3 actually outputs at the answer position; the two together get ≥ 99.98% of the probability. `" yes"` and `"Yes"` are about e^-10 less likely |
 | Thinking on/off uses the chat template's `enable_thinking` flag, not `/think` / `/no_think` | With thinking off, the template itself adds an empty `<think></think>` block, so the answer is the very next word |
 | Flash attention is off everywhere | Measured: turning it on changes the single-pass score on the same prompt (0.52 vs 0.39). All fitting, evaluation, and Pi runs must use the same setting |
-| `n_batch` = context size | A whole prompt goes to llama.cpp in one call, and llama.cpp aborts the process if a call has more than `n_batch` word pieces (default 512). White-box reference prompts are about 475–515 |
+| `n_batch` = context size | A whole prompt goes to llama.cpp in one call, and llama.cpp aborts the process if a call has more than `n_batch` word pieces (default 512). White-box reference prompts were 508–562 in the pilot |
 | Generative decoding is greedy (always the most likely next word) | Repeatable: the same prompt always gives the same reasoning and score |
 | Numbers in prompts use 4 significant digits (`0.4076`, `1.103e+38`) | One format that handles both normal values and 1e38. The proposal's example uses 2 decimals, which would print 1e38 as a 39-digit number |
 | The question is "Did a fault change this run's predicted class? Answer with exactly one word: yes or no." | Matches the SDC label exactly (`label_run`: argmax differs from the clean prediction). "Is this run corrupted?" would be vaguer: masked runs with huge activations are arguably "corrupted" too |
@@ -187,9 +187,9 @@ Fit runs only, laptop, Qwen3-0.6B Q4_K_M, settings as in section 7. **These are 
 | white-box, zero-shot | 0.72 | 0.50 | 98% | 12.5 |
 | white-box, reference | 0.44 | 0.33 | 100% | 12.4 |
 
-- Single-pass gives about 0.7–0.86 to everything, SDC or masked. Median 0.5–1.8 s per run.
+- Single-pass gives high scores to everything, SDC or masked: the average per condition is 0.70–0.90 for both labels. Median 0.5–1.8 s per run.
 - Generative, black-box, zero-shot: with no reference, Qwen kept reasoning until it hit the 2048 context limit on half the runs.
-- Generative, white-box, reference: on 10 of 18 big-number SDCs it answered "no". Example (`fit-00013825`): its reasoning says layer3's max of 5.639e+36 is "way higher", then concludes "all the statistics ... are the same".
+- Generative, white-box, reference: on 11 of 18 big-number SDCs it answered "no". Example (`fit-00013825`): its reasoning says layer3's max of 5.639e+36 is "way higher", then concludes "all the statistics ... are the same".
 - Generative, black-box, reference: it compares `entropy=0` with the normal minimum (3.96e-7) and says yes. See [section 9](#9-findings-that-affect-the-classical-detectors).
 
 **Probe: 200 SDC + 200 masked fit runs, white-box, zero-shot** (`runs/scores/probe_pilot`). 5-fold cross-validation within these runs, folds grouped by image so the same image is never in both training and test.

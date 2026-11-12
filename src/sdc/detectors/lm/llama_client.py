@@ -33,7 +33,7 @@ class QwenClient:
         # (~25% slower per decode on the laptop).
         # n_batch = n_ctx: _decode feeds a whole prompt in one llama_decode call, and
         # llama.cpp aborts the process if that call has more than n_batch tokens
-        # (default 512; a white-box reference prompt is ~515).
+        # (default 512; white-box reference prompts are ~510-560).
         self.llm = llama_cpp.Llama(
             model_path=gguf_path, n_ctx=n_ctx, n_batch=n_ctx, n_threads=n_threads,
             flash_attn=flash_attn, embedding=True,
