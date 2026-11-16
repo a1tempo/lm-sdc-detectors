@@ -79,6 +79,17 @@ def sample_fault(shapes: dict[str, tuple[int, ...]], site: FaultSite, group: Bit
     return FaultSpec(site, layer, element, sample_bit(group, rng), group)
 
 
+def fault_from_record(row) -> FaultSpec:
+    """Rebuild the FaultSpec of a saved run (a row from load_runs, or a dict)."""
+    return FaultSpec(
+        site=FaultSite(row["fault_site"]),
+        layer=str(row["layer"]),
+        element=tuple(int(i) for i in row["element"]),
+        bit_position=int(row["bit_position"]),
+        bit_group=BitGroup(row["bit_group"]),
+    )
+
+
 def _flip_in_place(tensor: torch.Tensor, index: tuple[int, ...], bit_position: int) -> FaultValues:
     if tensor.dtype != torch.float32:
         raise ValueError(f"expected a float32 tensor, got {tensor.dtype}")

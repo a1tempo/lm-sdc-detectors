@@ -306,3 +306,12 @@ def test_activation_fault_rejects_wrong_site_and_out_of_bounds(injector):
         injector.inject(weight_spec())
     with pytest.raises(AssertionError):
         injector.inject(activation_spec(element=(9999, 0, 0)))
+
+
+def test_fault_from_record_rebuilds_the_spec():
+    from sdc.injection.faults import fault_from_record
+
+    row = {"fault_site": "weight", "layer": "layer3.1.conv2", "element": np.array([4, 2, 1, 0]),
+           "bit_position": 30, "bit_group": "exponent"}
+    assert fault_from_record(row) == FaultSpec(
+        FaultSite.WEIGHT, "layer3.1.conv2", (4, 2, 1, 0), 30, BitGroup.EXPONENT)

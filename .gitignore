@@ -18,3 +18,6 @@ __pycache__/
 *.pth
 *.tflite
 *.gguf
+
+# Private ntfy topic for scripts/notify.sh: never commit it.
+.ntfy_topic
