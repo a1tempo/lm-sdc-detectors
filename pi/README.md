@@ -7,6 +7,36 @@ share the same 8 GB.
 **Status: nothing here has been done yet.** All code so far has only run on a Mac. See
 [docs/README.md](../docs/README.md) for full project context.
 
+## Running the faulty LiteRT models (scripts/11_run_faulty_tflite.py)
+
+The faulty models are made on a Mac by `scripts/10_export_faulty_tflite.py` (one FP32
+`.tflite` per weight fault, about 43 MB each) and carried to the Pi on an SD card / USB
+drive. The Pi runner needs only numpy, Pillow, PyYAML and ai-edge-litert, not PyTorch.
+
+1. Get the code and a light Python environment (64-bit Raspberry Pi OS):
+   ```bash
+   git clone https://github.com/a1tempo/lm-sdc-detectors.git
+   cd lm-sdc-detectors
+   python3 -m venv .venv
+   .venv/bin/pip install numpy pillow pyyaml ai-edge-litert
+   .venv/bin/pip install --no-deps -e .
+   ```
+   The EuroSAT images come with the repo. If `ai-edge-litert` has no wheel for the Pi's
+   Python version, use a Python version it supports and note it here.
+2. Copy the clean model from the shared Drive folder: `lm-sdc-share/models/eurosat_fp32.tflite`
+   to `models/eurosat_fp32.tflite`. The runner labels every faulty run against it.
+3. Phone notifications (optional): `echo <your-topic> > .ntfy_topic` (see `scripts/notify.sh`).
+4. Plug in the card and find it: `ls /media/$USER` (it is named `fLiteRT`). Then:
+   ```bash
+   source .venv/bin/activate
+   python scripts/11_run_faulty_tflite.py --models-dir /media/$USER/fLiteRT/lm-sdc --count 3
+   scripts/notify.sh python scripts/11_run_faulty_tflite.py --models-dir /media/$USER/fLiteRT/lm-sdc
+   ```
+   The first command is a quick check; the second runs the rest (it skips what is done
+   and resumes after Ctrl-C).
+5. Results go to `runs/pi_tflite/results.csv` (gitignored). Copy it back to the Mac / Drive.
+   Each row has the PyTorch label next to the Pi label (`same_as_pytorch`).
+
 ## TODO
 - [ ] OS and Python version (record here so everyone matches; the project needs 3.11 or newer)
 - [ ] `pip install -e .[tflite,lm]` on the Pi; note any wheels that must be built from source
