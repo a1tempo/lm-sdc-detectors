@@ -38,7 +38,10 @@ echo "== 2. code (branch micah/lm-detectors, from the bundle on the card)"
 git -C ~/lm-detectors-micah log --oneline -1
 
 echo "== 3. llama-cpp-python 0.3.36 (compiles llama.cpp; 10-30 min, estimate)"
-[ -d ~/lm-venv ] || python3 -m venv ~/lm-venv
+if [ ! -x ~/lm-venv/bin/pip ]; then   # missing or half-made (e.g. an earlier attempt failed)
+  rm -rf ~/lm-venv
+  python3 -m venv ~/lm-venv
+fi
 if ! ~/lm-venv/bin/python -c "import llama_cpp" 2>/dev/null; then
   start=$(date +%s)
   # Offline packages from the card first; if that fails, try the internet.
