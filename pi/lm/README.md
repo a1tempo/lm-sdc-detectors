@@ -130,3 +130,25 @@ Then log it in `results-log.md` (device, OS, Python, temperatures, the numbers, 
 - **Flash attention stays off and the context is 2048 tokens**, as everywhere else.
 - **If the Pi gets hot:** it slows itself down at about 80–85 °C (from memory). `vcgencmd
   get_throttled` other than `0x0` means it did. Note it; don't trust those timings.
+
+## The long run (Nov 17–18): detection quality on the Pi, 0.6B
+
+The bench above uses 4 runs, which is enough for speed and memory but says nothing about
+detection quality. The long run scores 400 fit + 400 eval runs on the Pi.
+
+1. **Pick runs and write prompts (laptop):** `make_subset_prompts.py --split fit` and
+   `--split eval`. Per split: every SDC the range check misses (31), 169 other SDCs at
+   random, 200 masked at random, seed 42. Writes `prompts-<split>.jsonl` (not in git, 3 MB
+   each, rebuilt by the script) and `prompts-<split>.manifest.json` (run ids, group sizes,
+   reference ranges).
+2. **Run on the Pi:** copy `pi_bench.py`, `long_run.sh` and the two prompt files to
+   `~/pi-kit/`, then `nohup bash ~/pi-kit/long_run.sh > ~/lm-long.log 2>&1 &`. It runs only
+   the probe pass (`--passes probe`), which gives the single-pass score and the hidden
+   state in one decode. It saves every 20 queries and continues where it stopped if rerun.
+   Took 5.5 h on the fanless Pi (median 89 °C, throttled).
+3. **Analyse (laptop):** `analyze_long_run.py <results prefix>`, e.g.
+   `.../results/pi-20261118/pi-0.6b`. Needs `results.csv` and `hidden.npz` for both splits
+   and the team's run files. Output of the Nov 18 run: `results/pi-20261118/analysis.txt`.
+
+The hard SDCs are over-represented on purpose, so the script reports AUROC for them, for
+the other SDCs, and a weighted combination that estimates the full-split value.

@@ -13,6 +13,11 @@ Recorded once: model load time, resident memory after load and at peak, throttli
 device, versions, model sha256, git commit. Writes <out>/results.csv, <out>/hidden.npz,
 <out>/summary.json.
 
+Long runs: results.csv and hidden.npz are rewritten every --save-every queries, and a rerun
+with the same --out skips the queries already saved (so a crash or power cut loses a few
+minutes, not the run). --passes probe skips the separate single-pass decode: the probe pass
+returns the same P(yes), P(no) (equal to 6 decimal places) plus the hidden state.
+
 With --compare <dir of another run of this script>, it prints how far this machine's scores
 are from that one's on the same prompts (e.g. Pi vs laptop).
 
@@ -97,6 +102,39 @@ def score(p_yes, p_no):
     return p_yes / (p_yes + p_no)
 
 
+NUMERIC = ("seconds", "p_yes", "p_no", "score", "temp_c", "prompt_tokens", "n_gen_tokens")
+
+
+def load_saved(out: Path) -> tuple[list[dict], dict]:
+    """Rows and hidden states saved by an earlier, interrupted run with the same --out."""
+    if not (out / "results.csv").exists():
+        return [], {}
+    with open(out / "results.csv") as f:
+        rows = list(csv.DictReader(f))
+    for r in rows:   # the csv gives text; turn the number columns back into numbers
+        for k in NUMERIC:
+            if r.get(k) not in (None, ""):
+                r[k] = float(r[k])
+            elif k in r:
+                r[k] = None
+    hidden = dict(np.load(out / "hidden.npz")) if (out / "hidden.npz").exists() else {}
+    return rows, hidden
+
+
+def save(out: Path, rows: list[dict], hidden: dict) -> None:
+    """Write results.csv and hidden.npz. Each goes to a temporary file first and is then
+    renamed, so a crash in the middle of saving cannot leave a half-written file."""
+    fields = list(dict.fromkeys(k for r in rows for k in r))   # every column, first-seen order
+    with open(out / "results.csv.tmp", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    (out / "results.csv.tmp").replace(out / "results.csv")
+    with open(out / "hidden.npz.tmp", "wb") as f:
+        np.savez(f, **hidden)
+    (out / "hidden.npz.tmp").replace(out / "hidden.npz")
+
+
 def compare(rows: list[dict], hidden: dict, other_dir: Path) -> None:
     """Print score differences against another run of this script on the same prompts."""
     with open(other_dir / "results.csv") as f:
@@ -158,7 +196,16 @@ def main(args) -> None:
     print(f"{env['device']} | {gguf.name} | {args.threads} threads | "
           f"loaded in {env['load_s']:.1f} s, {env['rss_after_load_mb']:.0f} MB resident")
 
-    rows, hidden = [], {}
+    rows, hidden = load_saved(out)
+    # A probe row only counts as done if its hidden state was saved too.
+    done = {(r["run_id"], r["access_level"], r["condition"], r["pass"]) for r in rows
+            if r["pass"] != "probe"
+            or f"{r['run_id']}|{r['access_level']}|{r['condition']}" in hidden}
+    rows = [r for r in rows if (r["run_id"], r["access_level"], r["condition"], r["pass"]) in done]
+    env["resumed_rows"] = len(rows)
+    if rows:
+        print(f"resuming: {len(rows)} queries already saved in {out}")
+    passes = args.passes.split(",")
 
     def record(p, name, seconds, p_yes, p_no, **extra):
         row = {"run_id": p["run_id"], "label": p["label"], "access_level": p["access_level"],
@@ -166,13 +213,17 @@ def main(args) -> None:
                "p_yes": p_yes, "p_no": p_no, "score": score(p_yes, p_no),
                "temp_c": cpu_temp_c(), **extra}
         rows.append(row)
+        if len(rows) % args.save_every == 0:
+            save(out, rows, hidden)
         print(f"  {name:6s} {p['run_id']} {p['label']:6s} {p['access_level']:8s} "
               f"{p['condition']:9s} score={row['score']:.3f}  {seconds:6.2f} s", flush=True)
 
     # Single-pass and probe passes on every selected prompt.
-    for name in ("single", "probe"):
+    for name in passes:
         print(f"\n{name} pass, {len(prompts)} prompts")
         for p in prompts:
+            if (p["run_id"], p["access_level"], p["condition"], name) in done:
+                continue
             n_tok = len(client._tokenize(p["prompt_single"]))
             t = time.perf_counter()
             if name == "single":
@@ -188,6 +239,8 @@ def main(args) -> None:
     print(f"\ngenerative pass, {len(gen)} prompts ({args.gen_level}, {args.gen_condition}), "
           f"budget {args.max_tokens} tokens")
     for p in gen:
+        if (p["run_id"], p["access_level"], p["condition"], "gen") in done:
+            continue
         n_tok = len(client._tokenize(p["prompt_think"]))
         t = time.perf_counter()
         text, p_yes, p_no = client.generate_then_answer(p["prompt_think"], args.max_tokens)
@@ -207,24 +260,20 @@ def main(args) -> None:
             env[f"{name}_max_s"] = max(secs)
     for level in ("blackbox", "whitebox"):
         for cond in ("zero_shot", "reference"):
-            secs = [r["seconds"] for r in rows if r["pass"] == "single"
-                    and r["access_level"] == level and r["condition"] == cond]
-            if secs:
-                env[f"single_median_s__{level}__{cond}"] = statistics.median(secs)
+            for name in ("single", "probe"):
+                secs = [r["seconds"] for r in rows if r["pass"] == name
+                        and r["access_level"] == level and r["condition"] == cond]
+                if secs:
+                    env[f"{name}_median_s__{level}__{cond}"] = statistics.median(secs)
     gens = [r for r in rows if r["pass"] == "gen"]
     if gens:   # includes reading the prompt, so a slight underestimate of generation speed
         env["gen_tokens_per_s"] = sum(r["n_gen_tokens"] for r in gens) / sum(r["seconds"] for r in gens)
 
-    fields = list(dict.fromkeys(k for r in rows for k in r))   # every column, first-seen order
-    with open(out / "results.csv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
-    np.savez(out / "hidden.npz", **hidden)
+    save(out, rows, hidden)
     (out / "summary.json").write_text(json.dumps(env, indent=2))
 
-    print(f"\npeak resident memory {env['rss_peak_mb']:.0f} MB | "
-          f"single median {env['single_median_s']:.2f} s | probe median {env['probe_median_s']:.2f} s"
+    print(f"\npeak resident memory {env['rss_peak_mb']:.0f} MB"
+          + "".join(f" | {name} median {env[f'{name}_median_s']:.2f} s" for name in passes)
           + (f" | gen median {env['gen_median_s']:.1f} s, ~{env['gen_tokens_per_s']:.1f} tok/s"
              if gens else ""))
     print(f"temperature {env['temp_before_c']} -> {env['temp_after_c']} C | "
@@ -246,6 +295,8 @@ if __name__ == "__main__":
     p.add_argument("--gen-level", default="whitebox", choices=["blackbox", "whitebox"])
     p.add_argument("--gen-condition", default="zero_shot", choices=["zero_shot", "reference"])
     p.add_argument("--max-tokens", type=int, default=2048)
+    p.add_argument("--passes", default="single,probe", help="single, probe, or both (comma-separated)")
+    p.add_argument("--save-every", type=int, default=20, help="save after this many queries")
     p.add_argument("--compare", default=None, help="another output dir of this script")
     p.add_argument("--out", required=True)
     main(p.parse_args())
