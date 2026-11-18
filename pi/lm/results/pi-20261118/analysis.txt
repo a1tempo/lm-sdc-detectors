@@ -1,24 +1,15 @@
 fit subset {'masked': 200, 'sdc_out_of_range': 169, 'sdc_in_range': 31}, 327 images
 eval subset {'masked': 200, 'sdc_out_of_range': 169, 'sdc_in_range': 31}, 320 images; full eval split {'masked': 54269, 'sdc_out_of_range': 736, 'sdc_in_range': 31}
 
-entropy exactly 0 (eval subset): masked 0/200; sdc_in_range 0/31; sdc_out_of_range 160/169
-
 eval AUROC                             in-range   other weighted  95% interval   recall@5% eval FPR
 single-pass blackbox zero_shot            0.235   0.139    0.143  [0.095, 0.195]     0.000    0.070
 probe       blackbox zero_shot            0.945   0.992    0.991  [0.978, 0.997]     0.979    0.100
 single-pass blackbox reference            0.362   0.047    0.060  [0.034, 0.088]     0.000    0.075
 probe       blackbox reference            0.942   0.994    0.992  [0.986, 0.997]     0.964    0.065
-raw LR      blackbox                      0.984   0.035    0.073  [0.046, 0.107]     0.074    0.110
-raw trees   blackbox                      0.978   0.994    0.994  [0.985, 0.999]     0.992    0.065
 single-pass whitebox zero_shot            0.204   0.653    0.635  [0.577, 0.689]     0.221    0.065
 probe       whitebox zero_shot            0.952   0.995    0.993  [0.988, 0.997]     0.973    0.095
 single-pass whitebox reference            0.257   0.329    0.326  [0.271, 0.379]     0.028    0.080
 probe       whitebox reference            0.925   0.986    0.983  [0.971, 0.992]     0.960    0.095
-raw LR      whitebox                      0.990   0.932    0.934  [0.898, 0.963]     0.881    0.105
-raw trees   whitebox                      0.990   1.000    0.999  [0.999, 1.000]     1.000    0.075
-range check whitebox                      0.487   1.000    0.979  [0.971, 0.986]     0.960    0.025
-entropy     blackbox                      0.990   0.035    0.074  [0.046, 0.108]     0.074    0.105
-entropy 2-sided blackbox                  0.990   0.982    0.982  [0.959, 0.999]     0.983    0.105
 
 Single-pass score by group (eval), median [min, max]:
   blackbox zero_shot: masked 0.728 [0.382, 0.935]; sdc_in_range 0.636 [0.450, 0.742]; sdc_out_of_range 0.582 [0.452, 0.630]

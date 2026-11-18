@@ -5,17 +5,12 @@ For each access level and prompt condition:
   single-pass  the LM's own score P(yes)/(P(yes)+P(no)), no training
   probe        the team's probe classifier (standardize, then logistic regression, C=1),
                trained on the fit subset's hidden states, scored on the eval subset
-and, for context on the same runs (exploratory, not the team's classical detectors):
-  range check  proposal Eq. 1 with the fit fault-free [min, max]        (white-box)
-  entropy      the confidence check's score                              (black-box)
-  raw LR       the same classifier as the probe on the raw observations  (2 or 32 numbers)
-  raw trees    gradient-boosted trees on the same raw observations: a classifier that,
-               unlike raw LR, can learn rules such as "entropy exactly 0 OR entropy high"
-  entropy 2-sided  hand-made rule: entropy exactly 0 is most suspicious, otherwise
-               higher entropy is more suspicious                         (black-box)
+Only the LM detectors are scored here. The classical detectors are Reem and Arvin's;
+their scores on these same runs go next to these numbers once they exist.
 
-AUROC is reported three ways, because the subset holds ALL SDCs the range check misses
-(31 per split) but only a sample of the others:
+AUROC is reported three ways, because the subset holds ALL SDCs whose min and max stay
+inside the fit fault-free range at every monitored point (31 per split, "in-range") but
+only a sample of the others:
   in-range     the 31 hard SDCs vs the masked sample
   other        the other SDCs vs the masked sample
   weighted     the two combined in the full split's proportions (e.g. 31 : 736 for eval);
@@ -35,14 +30,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GroupKFold, cross_val_predict
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from sdc.observations.serialize import observation_columns
 from sdc.records.io import load_runs
 
 KIT = Path(__file__).resolve().parent
@@ -62,7 +55,6 @@ def aurocs(score, runs, w):
     y = (runs["label"] == "sdc").to_numpy()
     s = runs["stratum"].to_numpy()
     out = {}
-    score = np.minimum(score, 1e300)      # roc_auc_score does not accept inf
     for name, keep in [("in-range", s != "sdc_out_of_range"), ("other", s != "sdc_in_range")]:
         out[name] = roc_auc_score(y[keep], score[keep])
     # Masked runs all get weight 1 relative to each other; SDC runs get stratum weights.
@@ -77,13 +69,13 @@ def recall_at_5(fit_score, fit_runs, score, runs, w):
     return (np.sum(w[y] * flagged[y]) / np.sum(w[y]), flagged[~y].mean())
 
 
-def range_score(runs, points):
-    worst = np.zeros(len(runs))
+def in_range(runs, points):
+    """True where every monitored point's min and max lie inside the fit range
+    (same rule as make_subset_prompts.py)."""
+    ok = np.ones(len(runs), dtype=bool)
     for p in POINTS:
-        a, b = points[p]["min"], points[p]["max"]
-        over = np.maximum(runs[f"{p}_max"].to_numpy() - b, a - runs[f"{p}_min"].to_numpy())
-        worst = np.maximum(worst, np.maximum(0, over) / (b - a))
-    return worst
+        ok &= ((runs[f"{p}_min"] >= points[p]["min"]) & (runs[f"{p}_max"] <= points[p]["max"])).to_numpy()
+    return ok
 
 
 def load(split):
@@ -91,11 +83,9 @@ def load(split):
     and hidden states from the bench."""
     manifest = json.loads((KIT / f"prompts-{split}.manifest.json").read_text())
     runs = load_runs(f"runs/faults/{split}").set_index("run_id").loc[manifest["run_ids"]]
-    # Same grouping as make_subset_prompts.py: an SDC is "in range" if the range check's
-    # score is 0, i.e. no monitored point leaves the fit fault-free [min, max].
-    hidden_from_range_check = range_score(runs, manifest["reference_ranges"]["points"]) == 0
+    inside = in_range(runs, manifest["reference_ranges"]["points"])
     runs["stratum"] = np.where(runs["label"] == "masked", "masked",
-                               np.where(hidden_from_range_check, "sdc_in_range", "sdc_out_of_range"))
+                               np.where(inside, "sdc_in_range", "sdc_out_of_range"))
     assert runs["stratum"].value_counts().to_dict() == manifest["chosen"]
     res = pd.read_csv(f"{prefix}-{split}/results.csv")
     hid = np.load(f"{prefix}-{split}/hidden.npz")
@@ -104,10 +94,6 @@ def load(split):
 
 def classifier():
     return make_pipeline(StandardScaler(), LogisticRegression(C=1.0, max_iter=5000))
-
-
-def trees():
-    return HistGradientBoostingClassifier(random_state=42)
 
 
 def trained(make, X_fit, X_ev):
@@ -137,17 +123,6 @@ for level in ("blackbox", "whitebox"):
         H_fit = np.stack([fit_hid[f"{i}|{level}|{cond}"] for i in fit_runs.index])
         H_ev = np.stack([ev_hid[f"{i}|{level}|{cond}"] for i in ev_runs.index])
         detectors.append((f"probe       {level} {cond}", *trained(classifier, H_fit, H_ev)))
-    cols = observation_columns(level)
-    X_fit, X_ev = fit_runs[cols].to_numpy(float), ev_runs[cols].to_numpy(float)
-    detectors.append((f"raw LR      {level}", *trained(classifier, X_fit, X_ev)))
-    detectors.append((f"raw trees   {level}", *trained(trees, X_fit, X_ev)))
-points = fit_man["reference_ranges"]["points"]
-detectors.append(("range check whitebox", range_score(fit_runs, points), range_score(ev_runs, points)))
-detectors.append(("entropy     blackbox", fit_runs["entropy"].to_numpy(), ev_runs["entropy"].to_numpy()))
-two_sided = lambda runs: np.where(runs["entropy"] == 0, np.inf, runs["entropy"]).astype(float)
-detectors.append(("entropy 2-sided blackbox", two_sided(fit_runs), two_sided(ev_runs)))
-print("\nentropy exactly 0 (eval subset): " + "; ".join(
-    f"{s} {(g['entropy'] == 0).sum()}/{len(g)}" for s, g in ev_runs.groupby("stratum")))
 
 # Bootstrap over eval images: draw images with replacement, keep all their runs.
 images = ev_runs["image_id"].to_numpy()
@@ -159,7 +134,6 @@ ev_y = (ev_runs["label"] == "sdc").to_numpy()
 print(f"\n{'eval AUROC':38s} {'in-range':>8s} {'other':>7s} {'weighted':>8s}  {'95% interval':14s} "
       f"{'recall@5%':>9s} {'eval FPR':>8s}")
 for name, f, e in detectors:
-    e = np.minimum(e, 1e300)
     a = aurocs(e, ev_runs, ev_w)
     boot = [roc_auc_score(ev_y[d], e[d], sample_weight=np.where(ev_y[d], ev_w[d], 1.0)) for d in draws]
     lo, hi = np.percentile(boot, [2.5, 97.5])
