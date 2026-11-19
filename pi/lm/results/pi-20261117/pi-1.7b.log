@@ -1,0 +1,51 @@
+llama_init_from_model: model default pooling_type is [-1], but [0] was specified
+Raspberry Pi 5 Model B Rev 1.0 | Qwen3-1.7B-Q4_K_M.gguf | 4 threads | loaded in 4.0 s, 2478 MB resident
+
+single pass, 16 prompts
+  single fit-00007003 sdc    blackbox zero_shot score=1.000    3.76 s
+  single fit-00007003 sdc    blackbox reference score=1.000    5.10 s
+  single fit-00007003 sdc    whitebox zero_shot score=0.985   13.53 s
+  single fit-00007003 sdc    whitebox reference score=1.000   19.33 s
+  single fit-00004126 masked blackbox zero_shot score=0.999    4.79 s
+  single fit-00004126 masked blackbox reference score=1.000    6.42 s
+  single fit-00004126 masked whitebox zero_shot score=1.000   14.34 s
+  single fit-00004126 masked whitebox reference score=1.000   19.25 s
+  single fit-00010258 sdc    blackbox zero_shot score=1.000    4.72 s
+  single fit-00010258 sdc    blackbox reference score=1.000    6.14 s
+  single fit-00010258 sdc    whitebox zero_shot score=0.999   15.18 s
+  single fit-00010258 sdc    whitebox reference score=1.000   20.32 s
+  single fit-00005877 masked blackbox zero_shot score=1.000    5.06 s
+  single fit-00005877 masked blackbox reference score=1.000    6.74 s
+  single fit-00005877 masked whitebox zero_shot score=1.000   14.78 s
+  single fit-00005877 masked whitebox reference score=1.000   19.64 s
+
+probe pass, 16 prompts
+  probe  fit-00007003 sdc    blackbox zero_shot score=1.000    6.02 s
+  probe  fit-00007003 sdc    blackbox reference score=1.000    8.23 s
+  probe  fit-00007003 sdc    whitebox zero_shot score=0.985   19.98 s
+  probe  fit-00007003 sdc    whitebox reference score=1.000   26.26 s
+  probe  fit-00004126 masked blackbox zero_shot score=0.999    6.59 s
+  probe  fit-00004126 masked blackbox reference score=1.000    8.59 s
+  probe  fit-00004126 masked whitebox zero_shot score=1.000   18.64 s
+  probe  fit-00004126 masked whitebox reference score=1.000   25.53 s
+  probe  fit-00010258 sdc    blackbox zero_shot score=1.000    6.28 s
+  probe  fit-00010258 sdc    blackbox reference score=1.000    8.21 s
+  probe  fit-00010258 sdc    whitebox zero_shot score=0.999   20.02 s
+  probe  fit-00010258 sdc    whitebox reference score=1.000   26.56 s
+  probe  fit-00005877 masked blackbox zero_shot score=1.000    6.93 s
+  probe  fit-00005877 masked blackbox reference score=1.000    8.94 s
+  probe  fit-00005877 masked whitebox zero_shot score=1.000   19.64 s
+  probe  fit-00005877 masked whitebox reference score=1.000   26.09 s
+
+generative pass, 1 prompts (whitebox, zero_shot), budget 2048 tokens
+  gen    fit-00007003 sdc    whitebox zero_shot score=0.000  276.05 s
+
+peak resident memory 2931 MB | single median 10.13 s | probe median 13.79 s | gen median 276.0 s, ~4.9 tok/s
+temperature 82.05 -> 89.2 C | throttled throttled=0xe0000 -> throttled=0xe0006
+wrote results/pi-1.7b/results.csv, summary.json, hidden.npz
+
+Compared with results/laptop-1.7b:
+  single n=16  largest score difference 0.014
+  probe  n=16  largest score difference 0.014
+  gen    n=1  largest score difference 1.8e-05; same reasoning length on 0/1
+  hidden states: n=16, lowest cosine similarity 0.993360
