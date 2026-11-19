@@ -131,3 +131,21 @@ def test_feature_vector_order_and_transform():
     assert np.isfinite(feature_matrix(make_runs([{"layer1_max": np.inf}]), "whitebox")).all()
     with pytest.raises(ValueError):
         feature_names("greybox")
+
+
+def test_boosted_flags_both_ends_where_linear_cannot():
+    from sdc.detectors.classical.boosted import BoostedDetector
+
+    rng = np.random.default_rng(0)
+    rows = []
+    for i in range(600):
+        kind = i % 3                      # 0: masked (middle), 1: SDC too sure, 2: SDC unsure
+        entropy = {0: 0.5, 1: 0.01, 2: 1.5}[kind] + rng.normal(scale=0.05)
+        rows.append({"label": "masked" if kind == 0 else "sdc", "entropy": entropy,
+                     "top1_prob": 0.8, "image_id": i // 3})
+    runs = make_runs(rows)
+    y = runs["label"] == "sdc"
+    boosted = BoostedDetector("blackbox").fit(runs)
+    linear = LearnedDetector("blackbox").fit(runs)
+    assert auroc(y, boosted.score(runs)) > 0.99
+    assert auroc(y, linear.score(runs)) < 0.8

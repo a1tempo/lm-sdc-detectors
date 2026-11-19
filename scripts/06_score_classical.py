@@ -9,13 +9,16 @@ Detectors (higher score = more likely SDC):
     quantile    white-box: Eq. 1 with the 0.1% / 99.9% quantile bounds
     learned     black-box and white-box: logistic regression on the observation, the same
                 classifier as the LM probe
+    boosted     black-box and white-box: gradient-boosted trees on the same features
+                (non-linear baseline)
 
 Every detector is fitted, and its threshold frozen at target_fpr on masked runs, using the
 fitting split only (crashes excluded). A supervised detector's threshold comes from
 out-of-fold scores (5 folds grouped by image), since scores on its own training runs are too
-clean; scores_fit.parquet keeps those in `fit_score` for later threshold choices. With --fit-subset, the learned detectors are also
-trained on just those fit runs (variant "subset"), for a like-for-like comparison with an
-LM probe trained on the same runs.
+clean; scores_fit.parquet keeps those in `fit_score` for later threshold choices. With
+--fit-subset, the trained detectors (learned, boosted) are also trained on just those fit
+runs (variant "subset"), for a like-for-like comparison with an LM probe trained on the
+same runs.
 
 Writes <paths.detector_scores>/classical/:
     scores_fit.parquet, scores_eval.parquet   one row per (run, detector): score, alarm
@@ -30,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from sdc.config import load_config
+from sdc.detectors.classical.boosted import BoostedDetector
 from sdc.detectors.classical.confidence import ConfidenceCheck
 from sdc.detectors.classical.learned import LearnedDetector, out_of_fold_scores
 from sdc.detectors.classical.quantile import QuantileMonitor
@@ -47,6 +51,7 @@ def detectors() -> list:
         SanityCheck("blackbox"), SanityCheck("whitebox"), ConfidenceCheck("blackbox"),
         RangeCheck("whitebox"), QuantileMonitor("whitebox"),
         LearnedDetector("blackbox"), LearnedDetector("whitebox"),
+        BoostedDetector("blackbox"), BoostedDetector("whitebox"),
     ]
 
 
@@ -116,7 +121,8 @@ def main(args) -> None:
             detector.fit(train, ranges["points"])
             if detector.supervised:
                 level = detector.access_level
-                train_scores = out_of_fold_scores(lambda: LearnedDetector(level), train)
+                kind = type(detector)
+                train_scores = out_of_fold_scores(lambda: kind(level), train)
             else:
                 train_scores = detector.score(train)
             threshold = detector.freeze_threshold(train, target_fpr, scores=train_scores)
@@ -160,7 +166,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--config", default=None, help="YAML overlay on configs/default.yaml")
     parser.add_argument("--fit-subset", default=None,
-                        help="JSON run ids (or an LM manifest) to also train the learned detectors on")
+                        help="JSON run ids (or an LM manifest) to also train the trained detectors on")
     parser.add_argument("--eval-subset", default=None,
                         help="JSON run ids (or an LM manifest) to also report metrics on")
     main(parser.parse_args())

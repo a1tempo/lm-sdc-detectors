@@ -9,7 +9,7 @@ target_fpr on the fitting split. 95% intervals come from bootstrapping eval imag
 Writes <paths.results>/evaluation/:
     overall.csv              each classical detector on the full eval split
     strata_<by>.csv          the same per fault_site, bit_group and layer
-    data_size.csv            learned detectors trained on 1, 2, 4, 8, 10 faults per image
+    data_size.csv            trained detectors (learned, boosted) on 1, 2, 4, 8, 10 faults per image
     lm_comparison.csv        classical and LM detectors on the LM eval subset (needs the
                              subset manifests, and the LM results via --lm-prefix)
 
@@ -34,6 +34,7 @@ from sklearn.preprocessing import StandardScaler
 
 from sdc.config import load_config
 from sdc.detectors.base import threshold_for_fpr
+from sdc.detectors.classical.boosted import BoostedDetector
 from sdc.detectors.classical.learned import LearnedDetector, out_of_fold_scores
 from sdc.detectors.classical.range_check import RangeCheck
 from sdc.eval.bootstrap import bootstrap_ci, image_resamples
@@ -82,7 +83,7 @@ def overall(scores: pd.DataFrame, n_resamples: int, ci: float) -> pd.DataFrame:
 
 def data_size(fit: pd.DataFrame, ev: pd.DataFrame, target_fpr: float, n_resamples: int,
               ci: float) -> pd.DataFrame:
-    """Learned detectors trained on the first k faults per image (k = 1, 2, 4, 8, 10).
+    """Trained detectors fitted on the first k faults per image (k = 1, 2, 4, 8, 10).
 
     The plan is deterministic, so the first k faults per image are exactly what a campaign
     with injections_per_image = k would have produced.
@@ -93,16 +94,17 @@ def data_size(fit: pd.DataFrame, ev: pd.DataFrame, target_fpr: float, n_resample
     hard = ~y | ev["in_range"].to_numpy()
     for k in DATA_SIZES:
         train = fit[fit["fault_number"] < k]
-        for level in ("blackbox", "whitebox"):
-            detector = LearnedDetector(level).fit(train)
+        for kind, level in [(k_, l_) for k_ in (LearnedDetector, BoostedDetector)
+                            for l_ in ("blackbox", "whitebox")]:
+            detector = kind(level).fit(train)
             threshold = detector.freeze_threshold(
-                train, target_fpr, scores=out_of_fold_scores(lambda: LearnedDetector(level), train))
+                train, target_fpr, scores=out_of_fold_scores(lambda: kind(level), train))
             s = detector.score(ev)
             scored = ev[["image_id", "label"]].assign(score=s)
             a = bootstrap_ci(scored, lambda d: auroc(d["label"] == "sdc", d["score"].to_numpy()),
                              ci=ci, resamples=resamples)
             rows.append({
-                "faults_per_image": k, "detector": f"learned_{level}",
+                "faults_per_image": k, "detector": f"{detector.name}_{level}",
                 "n_train_sdc": int((train["label"] == "sdc").sum()),
                 "n_train_masked": int((train["label"] == "masked").sum()),
                 "auroc": a[0], "auroc_low": a[1], "auroc_high": a[2],
@@ -110,7 +112,7 @@ def data_size(fit: pd.DataFrame, ev: pd.DataFrame, target_fpr: float, n_resample
                 "fpr": fpr_at_threshold(y, s, threshold),
                 "auroc_in_range": auroc(y[hard], s[hard]),
             })
-            print(f"  k={k:2d} {level}: auroc {a[0]:.3f}", flush=True)
+            print(f"  k={k:2d} {detector.name}_{level}: auroc {a[0]:.3f}", flush=True)
     return pd.DataFrame(rows)
 
 
@@ -155,7 +157,7 @@ def lm_comparison(fit_runs, ev_runs, fit_scores, ev_scores, fit_manifest, ev_man
         fit_s = group.set_index("run_id").loc[fit_sub["run_id"]]
         ev_s = ev_scores[ev_scores["name"] == name].set_index("run_id").loc[ev_sub["run_id"], "score"]
         variant = fit_s["variant"].iloc[0]
-        if fit_s["detector"].iloc[0] == "learned" and variant == "full":
+        if fit_s["detector"].iloc[0] in ("learned", "boosted") and variant == "full":
             # Trained on the whole fit split: keep the threshold frozen there.
             detectors.append((name, "all fit runs", None, fit_s["threshold"].iloc[0], ev_s.to_numpy()))
         else:
@@ -253,7 +255,7 @@ def main(args) -> None:
             print(fmt(strata[["detector", by, "n_sdc", "n_masked", "auroc", "auroc_low",
                               "auroc_high", "recall"]]))
 
-    print("\ndata size: learned detectors trained on k faults per image", flush=True)
+    print("\ndata size: trained detectors on k faults per image", flush=True)
     sizes = data_size(runs["fit"], runs["eval"], target_fpr, n_resamples, ci)
     sizes.to_csv(out_dir / "data_size.csv", index=False)
     print(fmt(sizes))
