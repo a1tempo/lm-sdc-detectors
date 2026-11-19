@@ -146,3 +146,53 @@ def check_layer_alignment(torch_model, tflite_path: str) -> dict:
     weight tensor to its TFLite tensor and report anything fused or missing.
     """
     raise NotImplementedError
+
+
+def monitored_module(model):
+    """Wrap a ResNet-18 so one forward pass returns (logits, stats) with stats computed
+    in the graph: shape [6, 5] = (stem, layer1..4, fc) x (min, max, mean, std, nonfinite).
+
+    This is the white-box model as it would be deployed: the converted .tflite computes
+    the observation itself, so the Pi pays for it inside the same invoke. Stats are over
+    finite values, like observations.stats.layer_stats, but in float32 (fine for timing
+    and for clean runs; faulty runs near 1e38 would overflow the variance).
+    """
+    import torch
+
+    def point_stats(x):
+        x = x.flatten()
+        finite = (x - x) == 0                      # False for NaN and +-inf
+        n = finite.sum().to(x.dtype)
+        values = torch.where(finite, x, torch.zeros_like(x))
+        mean = values.sum() / n
+        var = torch.where(finite, (x - mean) ** 2, torch.zeros_like(x)).sum() / n
+        big = torch.full_like(x, 3.0e38)
+        return torch.stack([
+            torch.where(finite, x, big).min(), torch.where(finite, x, -big).max(),
+            mean, torch.sqrt(var), x.numel() - n,
+        ])
+
+    class Monitored(torch.nn.Module):
+        def __init__(self, net):
+            super().__init__()
+            self.net = net
+
+        def forward(self, x):
+            n = self.net
+            stem = n.maxpool(n.relu(n.bn1(n.conv1(x))))
+            l1 = n.layer1(stem)
+            l2 = n.layer2(l1)
+            l3 = n.layer3(l2)
+            l4 = n.layer4(l3)
+            logits = n.fc(torch.flatten(n.avgpool(l4), 1))
+            stats = torch.stack([point_stats(a) for a in (stem, l1, l2, l3, l4, logits)])
+            return logits, stats
+
+    return Monitored(copy.deepcopy(model).eval().cpu()).eval()
+
+
+def run_tflite_outputs(interpreter, x: np.ndarray) -> list[np.ndarray]:
+    """Run one float input and return every output, in the interpreter's output order."""
+    interpreter.set_tensor(interpreter.get_input_details()[0]["index"], np.asarray(x, dtype=np.float32))
+    interpreter.invoke()
+    return [interpreter.get_tensor(d["index"]) for d in interpreter.get_output_details()]

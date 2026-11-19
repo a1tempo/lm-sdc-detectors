@@ -37,6 +37,28 @@ drive. The Pi runner needs only numpy, Pillow, PyYAML and ai-edge-litert, not Py
 5. Results go to `runs/pi_tflite/results.csv` (gitignored). Copy it back to the Mac / Drive.
    Each row has the PyTorch label next to the Pi label (`same_as_pytorch`).
 
+## Overhead of the classical detectors (scripts/09_overhead.py)
+
+1. On the Mac, build the kit (LiteRT environment): `~/.venvs/lm-sdc-tflite/bin/python
+   scripts/09_prepare_overhead.py` -> `runs/overhead_kit/` (about 92 MB).
+2. Copy the repo and the kit to the Pi (on the Mac; keeps the Pi's own `.venv`):
+   ```bash
+   rsync -av --exclude '.venv' --exclude '__pycache__' --exclude '.pytest_cache' \
+       --include 'runs/' --include 'runs/overhead_kit/***' --exclude 'runs/*' \
+       ./ reem@<pi>:~/lm-sdc-detectors/
+   ```
+3. On the Pi, with internet once: `.venv/bin/pip install scikit-learn==<kit.json scikit_learn>`.
+4. Run it (keeps going after SSH disconnects; about 15-30 min fanless):
+   ```bash
+   nohup scripts/notify.sh .venv/bin/python scripts/09_overhead.py > ~/overhead.log 2>&1 &
+   ```
+   Without internet the notification waits and retries for 2 hours. Check with
+   `tail -12 ~/overhead.log`.
+5. Copy `runs/overhead/pi/overhead.json` back to the Mac.
+
+The Pi has no fan and throttles at about 85 C; the LM timings were taken the same way, and
+the script logs temperature and `vcgencmd get_throttled` before and after each phase.
+
 ## TODO
 - [ ] OS and Python version (record here so everyone matches; the project needs 3.11 or newer)
 - [ ] `pip install -e .[tflite,lm]` on the Pi; note any wheels that must be built from source
