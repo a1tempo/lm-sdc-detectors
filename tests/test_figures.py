@@ -42,3 +42,17 @@ def test_all_figures_render(tmp_path):
     for name in ("roc", "auroc", "size", "strata", "layers"):
         assert (tmp_path / f"{name}.png").stat().st_size > 10_000
         assert (tmp_path / f"{name}.pdf").exists()
+
+
+def test_overhead_figure_renders(tmp_path):
+    rows = []
+    for name, model, ms, auc in [("Range check", "", 12.0, 0.98), ("Entropy check", "", 0.05, 0.07),
+                                 ("Logistic regression", "", 0.6, 0.9), ("Boosted trees", "", 1.3, 0.99),
+                                 ("LM single-pass", "Qwen3-0.6B", 2000.0, 0.14),
+                                 ("LM probe", "Qwen3-0.6B", 3000.0, 0.99),
+                                 ("LM generative", "Qwen3-1.7B", 276000.0, None)]:
+        for level in ("blackbox", "whitebox"):
+            rows.append({"detector": name, "model": model, "access_level": level,
+                         "added_ms": ms * (2 if level == "whitebox" else 1), "auroc": auc})
+    figures.plot_overhead(pd.DataFrame(rows), 73.0, tmp_path / "overhead")
+    assert (tmp_path / "overhead.png").stat().st_size > 10_000

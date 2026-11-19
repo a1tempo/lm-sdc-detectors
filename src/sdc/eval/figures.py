@@ -273,6 +273,87 @@ def plot_layers(layer_table: pd.DataFrame, layer_order: list[str], out_path: str
     _save(fig, out_path)
 
 
-def plot_overhead(overhead_table, out_path: str) -> None:
-    """Latency / memory / energy per detector on the Pi (E2). TODO: implement after 09_overhead."""
-    raise NotImplementedError
+TIME_TICKS = [(0.01, "0.01 ms"), (0.1, "0.1 ms"), (1, "1 ms"), (10, "10 ms"), (100, "0.1 s"),
+              (1e3, "1 s"), (1e4, "10 s"), (1e5, "100 s"), (1e6, "1000 s")]
+
+
+def plot_overhead(overhead_table: pd.DataFrame, classifier_ms: float, out_path: str) -> None:
+    """Cost vs. detection quality on the Pi (E2), from scripts/09_summarize_overhead.py.
+
+    Left: AUROC (LM eval subset) against the time each detector adds per run, log scale.
+    Right: added time per run for every detector, including the generative LM and
+    Qwen3-1.7B (no detection quality measured), as the median with the range over the
+    four prompt types. Filled markers are white-box, hollow are black-box.
+    """
+    _style()
+    table = overhead_table.copy()
+    table["entity"] = table["detector"].map({
+        "Boosted trees": "boosted", "Logistic regression": "learned", "LM probe": "lm_probe",
+        "LM single-pass": "lm_single_pass", "LM generative": "lm_generative",
+        "Range check": "rule", "Entropy check": "rule"})
+    colors = {**COLORS, "lm_generative": "#e87ba4"}   # categorical slot 5
+    fig, (left, right) = plt.subplots(1, 2, figsize=(11.5, 5), gridspec_kw={"width_ratios": [1.1, 1]})
+
+    scored = table.dropna(subset=["auroc"])
+    for r in scored.itertuples():
+        filled = r.access_level == "whitebox"
+        left.plot(r.added_ms, r.auroc, "o", markersize=9, zorder=3,
+                  markerfacecolor=colors[r.entity] if filled else "none",
+                  markeredgecolor=colors[r.entity], markeredgewidth=2)
+    left.axvline(classifier_ms, color=AXIS, linewidth=1, zorder=1)
+    left.text(classifier_ms * 0.85, 0.45, f"one classifier\ninference ({classifier_ms:.0f} ms)",
+              color=MUTED, fontsize=8, va="center", ha="right")
+    left.axhline(0.5, color=MUTED, linewidth=1, linestyle=":", zorder=1)
+    left.set_xscale("log")
+    left.set_xlim(0.01, 5e4)
+    left.set_ylim(0, 1.03)
+    left.set_xlabel("Time added per run on the Pi (log scale)")
+    left.set_ylabel("AUROC on the LM eval subset")
+    left.set_title("Detection quality vs. cost")
+    handles = [plt.Line2D([], [], marker="o", linestyle="", markersize=8, color=colors[e],
+                          label=label)
+               for e, label in (("boosted", "Boosted trees"), ("learned", "Logistic regression"),
+                                ("rule", "Range / entropy check"), ("lm_probe", "LM probe"),
+                                ("lm_single_pass", "LM single-pass"))]
+    handles += [plt.Line2D([], [], marker="o", linestyle="", markersize=8, color=TEXT_SECONDARY,
+                           label="white-box"),
+                plt.Line2D([], [], marker="o", linestyle="", markersize=8, markerfacecolor="none",
+                           markeredgecolor=TEXT_SECONDARY, markeredgewidth=2, label="black-box")]
+    left.legend(handles=handles, loc="center left", fontsize=8)
+
+    order = [("Range check", "", "rule"), ("Entropy check", "", "rule"),
+             ("Logistic regression", "", "learned"), ("Boosted trees", "", "boosted"),
+             ("LM single-pass", "Qwen3-0.6B", "lm_single_pass"), ("LM probe", "Qwen3-0.6B", "lm_probe"),
+             ("LM generative", "Qwen3-0.6B", "lm_generative"),
+             ("LM single-pass", "Qwen3-1.7B", "lm_single_pass"), ("LM probe", "Qwen3-1.7B", "lm_probe"),
+             ("LM generative", "Qwen3-1.7B", "lm_generative")]
+    labels = []
+    for i, (name, model, entity) in enumerate(order):
+        y = len(order) - 1 - i
+        rows = table[(table["detector"] == name) & (table["model"].fillna("") == model)]
+        for level, dy in (("whitebox", 0.15), ("blackbox", -0.15)):
+            d = rows[rows["access_level"] == level]["added_ms"]
+            if d.empty:
+                continue
+            right.plot([d.min(), d.max()], [y + dy, y + dy], color=colors[entity], linewidth=2, zorder=2)
+            right.plot(d.median(), y + dy, "o", markersize=7, zorder=3, markeredgewidth=2,
+                       markerfacecolor=colors[entity] if level == "whitebox" else SURFACE,
+                       markeredgecolor=colors[entity])
+        labels.append(f"{name}" + (f" ({model.split('-')[1]})" if model else ""))
+    right.set_yticks(range(len(order) - 1, -1, -1), labels)
+    right.axvline(classifier_ms, color=AXIS, linewidth=1, zorder=1)
+    right.set_xscale("log")
+    right.set_xlim(0.01, 1e6)
+    right.grid(axis="y", visible=False)
+    for ax, ticks in ((left, TIME_TICKS[:-2]), (right, TIME_TICKS[::2])):
+        ax.set_xticks([t for t, _ in ticks], [label for _, label in ticks])
+        ax.minorticks_off()
+    right.set_xlabel("Time added per run on the Pi (log scale)")
+    right.set_title("Cost of every detector")
+    fig.suptitle("Raspberry Pi 5, CPU only, no fan (throttled)", x=0.01, ha="left",
+                 fontsize=12, fontweight="bold")
+    fig.text(0.01, -0.03, "White-box cost includes computing the layer statistics in the model "
+             "(+12 ms). LM: median over the four prompt types, line = their range. "
+             "Generative and 1.7B were timed on a few runs only.", color=TEXT_SECONDARY, fontsize=8)
+    fig.tight_layout()
+    _save(fig, out_path)
