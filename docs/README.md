@@ -120,7 +120,7 @@ Reem's files: checkpoint, test_indices.json, EuroSAT
         |
 05_inject             [done]  -> runs/faults/fit, eval: Parquet shards, campaign.json
         |
-06_score_classical    [stub]  -> runs/scores/
+06_score_classical    [done]  -> runs/scores/classical/
 07_score_lm           [stub]  -> runs/scores/
         |
 08_evaluate           [stub]  -> results/

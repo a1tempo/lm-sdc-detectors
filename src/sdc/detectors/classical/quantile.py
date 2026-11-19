@@ -1,7 +1,7 @@
-from sdc.detectors.base import Detector
+from sdc.detectors.classical.range_check import RangeCheck
 
 
-class QuantileMonitor(Detector):
+class QuantileMonitor(RangeCheck):
     """Like RangeCheck, but the bounds for layer l are the 0.1% and 99.9% quantiles
     of its per-run min and max across clean fitting runs, which makes them less
     sensitive to a single extreme clean run. Needs no fields beyond LayerStats.
@@ -10,11 +10,4 @@ class QuantileMonitor(Detector):
     TODO: confirm this definition with the team and add it to the paper.
     """
     name = "quantile"
-
-    def fit(self, fit_runs, reference_ranges=None):
-        # TODO: implement.
-        raise NotImplementedError
-
-    def score(self, runs):
-        # TODO: implement.
-        raise NotImplementedError
+    low_key, high_key = "quantile_low", "quantile_high"

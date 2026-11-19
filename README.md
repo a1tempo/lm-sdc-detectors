@@ -25,15 +25,15 @@ The EuroSAT images are in the repo at `data/EuroSAT_RGB/` (27,000 JPGs, about 88
 | Path | What | Planning item | Status |
 |---|---|---|---|
 | `src/sdc/data/eurosat.py` | transforms, held-out test split (seed 42), correct-image filter, fit/eval split | Part I.1 | Done |
-| `src/sdc/model/` | ResNet-18, checkpoint loading, TFLite conversion, hooks on the 6 monitored points | | Done, except TFLite: conversion ported but never run, inference is a stub |
+| `src/sdc/model/` | ResNet-18, checkpoint loading, TFLite conversion, hooks on the 6 monitored points | | Done; FP32 TFLite conversion and inference used for the Pi runs (`10`, `11`) |
 | `src/sdc/records/` | run-record schema (frozen at version 1, awaiting team review), Parquet shard I/O | Freeze run-record format | Done |
 | `src/sdc/injection/` | FP32 bit flips, weight faults (in place), activation faults (PyTorchFI), labeling, resumable campaign | Part I.2 | Done |
 | `src/sdc/observations/` | black-box / white-box stats, reference ranges, text serialization for prompts | Part I.3a | Done, except serialization and `feature_vector` |
-| `src/sdc/detectors/classical/` | sanity, confidence (entropy), range, quantile, learned (logreg) | Part I.3b | Stub |
+| `src/sdc/detectors/classical/` | sanity, confidence (entropy), range, quantile, learned (logreg) | Part I.3b | Done (`06_score_classical.py`) |
 | `src/sdc/detectors/lm/` | llama.cpp client, prompts, generative, single-pass, probe, optional API reference | Part II | Stub |
-| `src/sdc/eval/` | AUROC, recall@5%FPR, bootstrap CIs over images, stratification, ablations, figures | Part I.3d, Part III | Stub |
+| `src/sdc/eval/` | AUROC, recall@5%FPR, bootstrap CIs over images, stratification, ablations, figures | Part I.3d, Part III | Metrics done; CIs, strata, ablations, figures are stubs |
 | `src/sdc/overhead/` | latency, memory, thermal, energy, analytical LM cost model | Part I.3c, II.2c | Stub |
-| `scripts/00–09` | pipeline entry points in run order | | `01`, `02`, `03`, `05` done; the rest are stubs |
+| `scripts/00–09` | pipeline entry points in run order | | `01`, `02`, `03`, `05`, `06`, `10`, `11` done; the rest are stubs |
 | `pi/` | Raspberry Pi 5 setup checklist | Part II.1 | Nothing done yet |
 | `notebooks/reem_TFLite_EuroSAT_ResNet18.ipynb` | Reem's original training/conversion notebook (reference) | | Reference only |
 

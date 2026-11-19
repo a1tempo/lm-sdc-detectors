@@ -64,13 +64,47 @@ def whitebox_stats(activations: dict[str, torch.Tensor]) -> dict[str, LayerStats
     return {point: layer_stats(activation) for point, activation in activations.items()}
 
 
+BLACKBOX_FEATURES = ["top1_prob", "entropy"]
+WHITEBOX_STATS = ["min", "max", "mean", "std", "nonfinite"]
+
+
+def feature_names(access_level: str) -> list[str]:
+    """Column names of the observation o_i, in the fixed order feature_vector uses."""
+    if access_level == "blackbox":
+        return list(BLACKBOX_FEATURES)
+    if access_level == "whitebox":
+        return BLACKBOX_FEATURES + [f"{p}_{s}" for p in MONITORED_POINTS for s in WHITEBOX_STATS]
+    raise ValueError(f"access_level must be blackbox or whitebox, got {access_level!r}")
+
+
+def _signed_log(values: np.ndarray) -> np.ndarray:
+    """sign(x) * log(1 + |x|), with NaN -> 0 and +-inf -> +-log(max float64).
+
+    A corrupted weight can push a layer's values near 1e38, which would swamp any
+    linear model on raw numbers. The transform keeps order and sign, and a NaN (a layer
+    with no finite values) is still visible through that layer's nonfinite count.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    values = np.nan_to_num(values, nan=0.0, posinf=np.finfo(np.float64).max,
+                           neginf=-np.finfo(np.float64).max)
+    return np.sign(values) * np.log1p(np.abs(values))
+
+
+def feature_matrix(runs: pd.DataFrame, access_level: str) -> np.ndarray:
+    """feature_vector for every run: shape [n_runs, n_features]."""
+    return _signed_log(runs[feature_names(access_level)].to_numpy(dtype=np.float64))
+
+
 def feature_vector(record_row: dict, access_level: str) -> np.ndarray:
     """Flatten an observation into a fixed-order numeric vector.
 
     Shared by the learned detector and anything else that needs o_i as numbers,
-    so every detector sees identical information. TODO: implement.
+    so every detector sees identical information: black-box is (top1_prob, entropy);
+    white-box adds (min, max, mean, std, nonfinite) at each monitored point. Values go
+    through a signed log (see _signed_log).
     """
-    raise NotImplementedError
+    raw = [record_row[name] for name in feature_names(access_level)]
+    return _signed_log(np.array([np.nan if v is None else v for v in raw], dtype=np.float64))
 
 
 def reference_ranges(fit_clean_runs: pd.DataFrame) -> dict[str, dict[str, float]]:

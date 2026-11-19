@@ -23,8 +23,31 @@ class Detector(ABC):
         """Return one score s_i per run."""
 
     def freeze_threshold(self, fit_runs: pd.DataFrame, target_fpr: float = 0.05) -> float:
-        """Choose the threshold giving `target_fpr` on masked fitting runs, and store it.
+        """Choose the threshold giving at most `target_fpr` on masked fitting runs, and store it.
 
-        TODO: implement (Action item: "Freeze every detector's threshold on the fitting set").
+        A run raises an alarm when its score is strictly above the threshold. The threshold
+        is the smallest masked score that leaves at most target_fpr of masked runs above
+        it, so ties (common for 0/1 detectors) never push the fitting FPR over the target.
         """
-        raise NotImplementedError
+        masked = fit_runs[fit_runs["label"] == "masked"]
+        if masked.empty:
+            raise ValueError("no masked fitting runs to set a threshold on")
+        self.threshold = threshold_for_fpr(self.score(masked), target_fpr)
+        return self.threshold
+
+    def alarms(self, runs: pd.DataFrame, scores: np.ndarray | None = None) -> np.ndarray:
+        """True where the score is above the frozen threshold."""
+        if self.threshold is None:
+            raise RuntimeError("call freeze_threshold first")
+        scores = self.score(runs) if scores is None else scores
+        return np.asarray(scores) > self.threshold
+
+
+def threshold_for_fpr(masked_scores: np.ndarray, target_fpr: float) -> float:
+    """Smallest t among the scores with mean(masked_scores > t) <= target_fpr."""
+    scores = np.sort(np.asarray(masked_scores, dtype=np.float64))
+    if np.isnan(scores).any():
+        raise ValueError("scores contain NaN")
+    candidates = np.unique(scores)
+    fpr = (len(scores) - np.searchsorted(scores, candidates, side="right")) / len(scores)
+    return float(candidates[np.argmax(fpr <= target_fpr)])   # fpr only falls; the last is 0
