@@ -12,6 +12,7 @@ Writes <paths.results>/evaluation/:
     data_size.csv            trained detectors (learned, boosted) on 1, 2, 4, 8, 10 faults per image
     lm_comparison.csv        classical and LM detectors on the LM eval subset (needs the
                              subset manifests, and the LM results via --lm-prefix)
+    lm_comparison_scores.csv the per-run scores behind it (for ROC figures)
 
 LM comparison, following the LM long-run analysis so the rows are comparable: every detector
 gets its threshold from the fit subset's masked runs (out-of-fold scores for trained
@@ -78,7 +79,11 @@ def overall(scores: pd.DataFrame, n_resamples: int, ci: float) -> pd.DataFrame:
             "auroc_in_range": auroc(y[hard], group["score"].to_numpy()[hard]),
             "threshold": threshold,
         })
-    return pd.DataFrame(rows)
+        per_run.append(pd.DataFrame({
+            "detector": name, "run_id": ev_sub["run_id"].to_numpy(), "image_id": ev_sub["image_id"].to_numpy(),
+            "stratum": ev_strata, "is_sdc": ev_y, "weight": weights, "score": ev_s, "threshold": threshold,
+        }))
+    return pd.DataFrame(rows), pd.concat(per_run, ignore_index=True)
 
 
 def data_size(fit: pd.DataFrame, ev: pd.DataFrame, target_fpr: float, n_resamples: int,
@@ -189,7 +194,7 @@ def lm_comparison(fit_runs, ev_runs, fit_scores, ev_scores, fit_manifest, ev_man
                     ev_p = model.fit(h_fit, fit_y).predict_proba(h_ev)[:, 1]
                     detectors.append((f"lm_probe_{level}_{cond}", "fit subset", oof, None, ev_p))
 
-    rows = []
+    rows, per_run = [], []
     in_range_keep = ev_strata != "sdc_out_of_range"
     other_keep = ev_strata != "sdc_in_range"
     for name, trained, fit_s, threshold, ev_s in detectors:
@@ -207,7 +212,11 @@ def lm_comparison(fit_runs, ev_runs, fit_scores, ev_scores, fit_manifest, ev_man
             "fpr": fpr_at_threshold(ev_y, ev_s, threshold),
             "threshold": threshold,
         })
-    return pd.DataFrame(rows)
+        per_run.append(pd.DataFrame({
+            "detector": name, "run_id": ev_sub["run_id"].to_numpy(), "image_id": ev_sub["image_id"].to_numpy(),
+            "stratum": ev_strata, "is_sdc": ev_y, "weight": weights, "score": ev_s, "threshold": threshold,
+        }))
+    return pd.DataFrame(rows), pd.concat(per_run, ignore_index=True)
 
 
 def main(args) -> None:
@@ -241,32 +250,34 @@ def main(args) -> None:
     ev = scores["eval"].merge(runs["eval"][["run_id", "in_range"]], on="run_id")
     ev_full = ev[ev["variant"] == "full"]
 
-    print(f"overall: {ev_full['run_id'].nunique()} eval runs, {n_resamples} image resamples")
-    table = overall(ev_full, n_resamples, ci)
-    table.to_csv(out_dir / "overall.csv", index=False)
-    print(fmt(table[["detector", "auroc", "auroc_low", "auroc_high", "recall", "recall_low",
-                     "recall_high", "fpr", "auroc_in_range"]]))
+    if args.only == "all":
+        print(f"overall: {ev_full['run_id'].nunique()} eval runs, {n_resamples} image resamples")
+        table = overall(ev_full, n_resamples, ci)
+        table.to_csv(out_dir / "overall.csv", index=False)
+        print(fmt(table[["detector", "auroc", "auroc_low", "auroc_high", "recall", "recall_low",
+                         "recall_high", "fpr", "auroc_in_range"]]))
 
-    for by in STRATA:
-        print(f"\nby {by} ...", flush=True)
-        strata = stratified_metrics(ev_full, by, n_resamples if by != "layer" else min(n_resamples, 200), ci)
-        strata.to_csv(out_dir / f"strata_{by}.csv", index=False)
-        if by != "layer":
-            print(fmt(strata[["detector", by, "n_sdc", "n_masked", "auroc", "auroc_low",
-                              "auroc_high", "recall"]]))
+        for by in STRATA:
+            print(f"\nby {by} ...", flush=True)
+            strata = stratified_metrics(ev_full, by, n_resamples if by != "layer" else min(n_resamples, 200), ci)
+            strata.to_csv(out_dir / f"strata_{by}.csv", index=False)
+            if by != "layer":
+                print(fmt(strata[["detector", by, "n_sdc", "n_masked", "auroc", "auroc_low",
+                                  "auroc_high", "recall"]]))
 
-    print("\ndata size: trained detectors on k faults per image", flush=True)
-    sizes = data_size(runs["fit"], runs["eval"], target_fpr, n_resamples, ci)
-    sizes.to_csv(out_dir / "data_size.csv", index=False)
-    print(fmt(sizes))
+        print("\ndata size: trained detectors on k faults per image", flush=True)
+        sizes = data_size(runs["fit"], runs["eval"], target_fpr, n_resamples, ci)
+        sizes.to_csv(out_dir / "data_size.csv", index=False)
+        print(fmt(sizes))
 
     if args.fit_subset and args.eval_subset:
         print("\nclassical vs. LM on the LM eval subset", flush=True)
-        comparison = lm_comparison(
+        comparison, per_run = lm_comparison(
             runs["fit"], runs["eval"], scores["fit"], scores["eval"],
             read_manifest(args.fit_subset), read_manifest(args.eval_subset),
             args.lm_prefix, target_fpr, n_resamples, ci)
         comparison.to_csv(out_dir / "lm_comparison.csv", index=False)
+        per_run.to_csv(out_dir / "lm_comparison_scores.csv", index=False)
         print(fmt(comparison))
     print(f"\nwrote {out_dir}")
 
@@ -279,6 +290,8 @@ if __name__ == "__main__":
     parser.add_argument("--lm-prefix", default=None,
                         help="LM results prefix: <prefix>-fit/results.csv, <prefix>-eval/results.csv "
                              "(and hidden.npz for the probe)")
+    parser.add_argument("--only", choices=["all", "comparison"], default="all",
+                        help="'comparison' redoes only the classical vs. LM table")
     parser.add_argument("--resamples", type=int, default=None,
                         help="bootstrap resamples (default: eval.bootstrap_resamples)")
     main(parser.parse_args())
