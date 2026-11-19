@@ -22,17 +22,22 @@ class Detector(ABC):
     def score(self, runs: pd.DataFrame) -> np.ndarray:
         """Return one score s_i per run."""
 
-    def freeze_threshold(self, fit_runs: pd.DataFrame, target_fpr: float = 0.05) -> float:
+    def freeze_threshold(self, fit_runs: pd.DataFrame, target_fpr: float = 0.05,
+                         scores: np.ndarray | None = None) -> float:
         """Choose the threshold giving at most `target_fpr` on masked fitting runs, and store it.
+
+        `scores` (aligned with fit_runs) replaces self.score(fit_runs), e.g. out-of-fold
+        scores for a supervised detector.
 
         A run raises an alarm when its score is strictly above the threshold. The threshold
         is the smallest masked score that leaves at most target_fpr of masked runs above
         it, so ties (common for 0/1 detectors) never push the fitting FPR over the target.
         """
-        masked = fit_runs[fit_runs["label"] == "masked"]
-        if masked.empty:
+        is_masked = (fit_runs["label"] == "masked").to_numpy()
+        if not is_masked.any():
             raise ValueError("no masked fitting runs to set a threshold on")
-        self.threshold = threshold_for_fpr(self.score(masked), target_fpr)
+        scores = self.score(fit_runs) if scores is None else np.asarray(scores)
+        self.threshold = threshold_for_fpr(scores[is_masked], target_fpr)
         return self.threshold
 
     def alarms(self, runs: pd.DataFrame, scores: np.ndarray | None = None) -> np.ndarray:

@@ -11,7 +11,9 @@ Detectors (higher score = more likely SDC):
                 classifier as the LM probe
 
 Every detector is fitted, and its threshold frozen at target_fpr on masked runs, using the
-fitting split only (crashes excluded). With --fit-subset, the learned detectors are also
+fitting split only (crashes excluded). A supervised detector's threshold comes from
+out-of-fold scores (5 folds grouped by image), since scores on its own training runs are too
+clean; scores_fit.parquet keeps those in `fit_score` for later threshold choices. With --fit-subset, the learned detectors are also
 trained on just those fit runs (variant "subset"), for a like-for-like comparison with an
 LM probe trained on the same runs.
 
@@ -29,7 +31,7 @@ import pandas as pd
 
 from sdc.config import load_config
 from sdc.detectors.classical.confidence import ConfidenceCheck
-from sdc.detectors.classical.learned import LearnedDetector
+from sdc.detectors.classical.learned import LearnedDetector, out_of_fold_scores
 from sdc.detectors.classical.quantile import QuantileMonitor
 from sdc.detectors.classical.range_check import RangeCheck
 from sdc.detectors.classical.sanity import SanityCheck
@@ -112,14 +114,23 @@ def main(args) -> None:
             if variant == "subset" and not detector.supervised:
                 continue
             detector.fit(train, ranges["points"])
-            threshold = detector.freeze_threshold(train, target_fpr)
+            if detector.supervised:
+                level = detector.access_level
+                train_scores = out_of_fold_scores(lambda: LearnedDetector(level), train)
+            else:
+                train_scores = detector.score(train)
+            threshold = detector.freeze_threshold(train, target_fpr, scores=train_scores)
             name = f"{detector.name}_{detector.access_level}" + ("" if variant == "full" else "_subset")
-            fit_fpr = fpr_at_threshold(train["label"] == "sdc", detector.score(train), threshold)
+            fit_fpr = fpr_at_threshold(train["label"] == "sdc", train_scores, threshold)
             for split, df in runs.items():
                 s = detector.score(df)
-                scores[split].append(df[KEEP_COLUMNS].assign(
+                part = df[KEEP_COLUMNS].assign(
                     detector=detector.name, access_level=detector.access_level, variant=variant,
-                    name=name, score=s, threshold=threshold, alarm=s > threshold))
+                    name=name, score=s, threshold=threshold, alarm=s > threshold)
+                if split == "fit":
+                    oof = pd.Series(train_scores, index=train["run_id"])
+                    part["fit_score"] = df["run_id"].map(oof).fillna(pd.Series(s, index=df.index))
+                scores[split].append(part)
                 if split == "eval":
                     by_run = pd.Series(s, index=df["run_id"])
                     for set_name, eval_runs in eval_sets.items():

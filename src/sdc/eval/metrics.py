@@ -54,3 +54,30 @@ def fpr_at_threshold(y_true: np.ndarray, scores: np.ndarray, threshold: float) -
 def crash_rate(runs: pd.DataFrame) -> float:
     """Share of all faulty runs labelled crash."""
     return float((runs["label"] == "crash").mean())
+
+
+def weighted_auroc(y_true: np.ndarray, scores: np.ndarray, weights: np.ndarray) -> float:
+    """AUROC with per-run weights (e.g. to undo a subset's oversampling of a stratum).
+
+    +-inf scores are mapped to the largest finite floats first, which keeps their order.
+    """
+    from sklearn.metrics import roc_auc_score
+
+    y_true = np.asarray(y_true, dtype=bool)
+    if y_true.all() or not y_true.any():
+        return float("nan")
+    scores = np.nan_to_num(np.asarray(scores, dtype=np.float64), nan=np.nan,
+                           posinf=np.finfo(np.float64).max, neginf=-np.finfo(np.float64).max)
+    if np.isnan(scores).any():
+        raise ValueError("scores contain NaN")
+    return float(roc_auc_score(y_true, scores, sample_weight=weights))
+
+
+def weighted_recall(y_true: np.ndarray, scores: np.ndarray, threshold: float,
+                    weights: np.ndarray) -> float:
+    """Weighted share of SDC runs scoring above the threshold."""
+    y_true = np.asarray(y_true, dtype=bool)
+    w = np.asarray(weights, dtype=np.float64)[y_true]
+    if w.sum() == 0:
+        return float("nan")
+    return float(np.sum(w * (np.asarray(scores)[y_true] > threshold)) / w.sum())

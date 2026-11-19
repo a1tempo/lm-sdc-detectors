@@ -1,4 +1,6 @@
+import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -35,3 +37,18 @@ class LearnedDetector(Detector):
         if not self.fitted:
             raise RuntimeError("call fit() first")
         return self.model.predict_proba(feature_matrix(runs, self.access_level))[:, 1]
+
+
+def out_of_fold_scores(make_detector, runs, n_folds: int = 5) -> np.ndarray:
+    """Score each run with a detector that never trained on its image.
+
+    Folds are grouped by image_id. A trained detector's scores on its own training runs
+    are too clean to set a threshold from, so supervised thresholds come from these
+    (the LM probe analysis does the same).
+    """
+    scores = np.empty(len(runs))
+    folds = GroupKFold(n_folds).split(runs, groups=runs["image_id"].to_numpy())
+    for train_idx, test_idx in folds:
+        detector = make_detector().fit(runs.iloc[train_idx])
+        scores[test_idx] = detector.score(runs.iloc[test_idx])
+    return scores
